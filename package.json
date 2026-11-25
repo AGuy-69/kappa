@@ -1,0 +1,17 @@
+{
+  "name": "kappa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kappa: local AI agent (phase 1: chatbot + agent harness)",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/app/cli.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.ts\"",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0"
+  }
+}
