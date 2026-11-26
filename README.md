@@ -42,6 +42,10 @@ Only an explicit `true` from the approver passes. No approver, an error, or a no
 - `download_file` saves an http(s) URL to a new file inside the allowed folders: public internet only (same guard as `web_fetch`), never overwrites, 200 MB cap, no partial files left behind.
 - `media_control` is volume/mute and play/pause/next/previous. It uses media keys (Windows), `osascript` (macOS: volume only), `pactl` and `playerctl` (Linux).
 
+## Voice
+
+`/voice on` makes Kappa read her replies aloud in a female voice; `/listen` lets you talk instead of type (press Enter to stop). Needs ffmpeg for the microphone; speech recognition uses Groq (same key) or offline whisper.cpp. Details and settings: `src/voice/README.md`.
+
 ## Providers
 
 Set any of `GROQ_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`. At the prompt, `/provider` shows the active one and `/provider mistral` switches (each provider keeps its own model: `KAPPA_GROQ_MODEL`, `KAPPA_GEMINI_MODEL`, `KAPPA_MISTRAL_MODEL`). Mistral's API needs 9-character tool call ids and an assistant message between a tool result and a user message; Kappa converts the history on the way out, so switching between providers mid-conversation is safe. Switching is manual and only happens between requests, never mid-task: Gemini 3 rejects tool-call history that lacks its thought signatures, which a task handed over from another provider would not have. When a request fails with a rate-limit or server error, Kappa suggests the other provider. `GROQ_BASE_URL` can point the groq slot at any OpenAI-compatible server (e.g. OmniRoute). The free tiers of Gemini and Mistral may use your content to train their models; Groq's terms differ, check them.

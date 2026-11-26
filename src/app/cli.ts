@@ -10,6 +10,8 @@ import { createGroq } from '../llm/groq.ts';
 import { listModels } from '../llm/models.ts';
 import type { Approver } from '../security/permissions.ts';
 import { errMsg } from '../util/errors.ts';
+import { createListener, createSpeaker, sttOptionsFromEnv, ttsOptionsFromEnv } from '../voice/index.ts';
+import type { Listener, Speaker } from '../voice/index.ts';
 import { createLogger } from '../util/logger.ts';
 
 // Broken IPv6 routes make Node's fetch hang until it times out; prefer IPv4 (KAPPA_DNS_ORDER=verbatim to turn this off).
@@ -46,6 +48,40 @@ const approve: Approver = async (req, signal) => {
 };
 
 const deps = createDeps(cfg, { llm: createGroq(cfg), approve, log });
+// ---- voice (optional): /voice on speaks Kappa's replies; /listen records you. Approvals always stay on the keyboard. ----
+let speaker: Speaker | undefined;
+let listener: Listener | undefined;
+let voiceOn = false;
+process.stdin.on('keypress', () => speaker?.stop()); // any key cuts the voice off (does nothing while it is silent)
+process.on('exit', () => speaker?.stop());
+
+/** Push-to-talk: records until you press Enter, then returns what you said ("" if nothing or cancelled). */
+async function listen(): Promise<string> {
+  speaker?.stop(); // never let the microphone hear Kappa
+  const ctl = new AbortController();
+  turn = ctl; // Ctrl+C cancels
+  try {
+    listener ??= createListener(sttOptionsFromEnv());
+    const rec = await listener.start(ctl.signal);
+    console.log(yellow(`🎤 Listening (${listener.name})… speak, then press Enter to stop. Ctrl+C cancels.`));
+    try { await rl.question('', { signal: ctl.signal }); } catch { rec.cancel(); console.log(yellow('⏹ Cancelled.')); return ''; }
+    console.log(dim('… transcribing'));
+    const text = await rec.stop();
+    if (listener.pastes) { // Handy types the text itself, into this prompt
+      console.log(dim('Handy will type what you said at the prompt in a moment. Check it, then press Enter to send.'));
+      return '';
+    }
+    if (text) console.log(`${dim('heard:')} ${text}`);
+    else console.log(dim('Heard nothing.'));
+    return text;
+  } catch (e) {
+    console.log(red(`Voice: ${errMsg(e)}`));
+    return '';
+  } finally {
+    turn = null;
+  }
+}
+
 let conv = new Conversation(store, process.argv.includes('--resume') ? store.latest() : undefined);
 
 let midLine = false;
@@ -71,12 +107,28 @@ const hooks = {
 };
 
 console.log(`Kappa ${dim(`${cfg.provider}: ${cfg.model} · search: ${cfg.tavilyKey ? 'Tavily' : 'DuckDuckGo (set TAVILY_API_KEY for reliable search)'} · conversation #${conv.id}${conv.messages.length ? ` (resumed, ${conv.messages.length} messages)` : ''}`)}`);
-console.log(dim('Ctrl+C cancels a running task. Commands: /new  /provider [name]  /models  /model <name>  /ping  /net  /exit'));
+console.log(dim('Ctrl+C cancels a running task. Commands: /new  /provider [name]  /models  /model <name>  /ping  /net  /voice  /listen  /exit'));
 
 for (;;) {
-  const line = (await rl.question('\nyou> ')).trim();
+  let line = (await rl.question('\nyou> ')).trim();
+  let spoken = false;
+  if (line === '/listen' || line === '/talk' || (!line && voiceOn)) { line = await listen(); spoken = true; } // Enter on an empty line also talks while voice is on
+  if (spoken) line = line.replace(/^\/+/, ''); // what you said is never a command
   if (!line) continue;
   if (line === '/exit') break;
+  if (line.startsWith('/voice')) {
+    const arg = line.slice(6).trim().toLowerCase();
+    if (arg === 'on') {
+      try { speaker ??= createSpeaker(ttsOptionsFromEnv()); voiceOn = true; } catch (e) { console.log(red(`Voice: ${errMsg(e)}`)); }
+    } else if (arg === 'off') {
+      voiceOn = false;
+      speaker?.stop();
+    } else if (arg && arg !== 'status') {
+      console.log('Usage: /voice on | off | status');
+    }
+    console.log(`Voice replies: ${voiceOn ? `on (${speaker?.name})` : 'off'}. ${dim('/listen, or Enter on an empty line while voice is on, to talk. Any key stops the voice.')}`);
+    continue;
+  }
   if (line === '/new') { conv = new Conversation(store); console.log(`New conversation #${conv.id}`); continue; }
   if (line === '/ping') { // smallest possible request, no tools: tells an account/key problem apart from a request that is too big
     const overhead = Math.round((JSON.stringify(deps.registry.specs()).length + systemPrompt(cfg).length) / 3.5);
@@ -131,6 +183,12 @@ for (;;) {
   const r = await runTurn(deps, conv, line, turn.signal, hooks);
   turn = null;
   if (midLine) console.log();
+  if (voiceOn && r.status === 'done' && r.text) { // not awaited: typing is never blocked while she talks
+    speaker!.speak(r.text).catch((e) => {
+      voiceOn = false;
+      console.log(red(`Voice: ${errMsg(e)}`), dim('\nVoice replies turned off. Fix that, then /voice on.'));
+    });
+  }
   if (r.status === 'cancelled') console.log(yellow('⏹ Cancelled.'));
   else if (r.status === 'max_iterations') console.log(yellow(`Stopped after ${cfg.maxIterations} steps without a final answer. Say "continue" to keep going.`));
   else if (r.status === 'error') {
@@ -141,4 +199,5 @@ for (;;) {
     if (others.length && /429|quota|rate|5\d\d/i.test(r.error ?? '')) console.log(yellow(`Tip: /provider ${others[0]} to switch, then repeat your request.`));
   }
 }
+speaker?.stop();
 rl.close();
