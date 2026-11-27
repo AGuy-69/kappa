@@ -11,7 +11,7 @@ import { exec, launch } from '../util/exec.ts';
 import type { Exec, Launch } from '../util/exec.ts';
 import { nullLogger } from '../util/logger.ts';
 import type { Logger } from '../util/logger.ts';
-import { systemPrompt, trim } from './context.ts';
+import { clipOld, systemPrompt, trim } from './context.ts';
 import type { Conversation } from './conversation.ts';
 import { executeToolCall } from './execute-tool.ts';
 import type { Outcome, ToolEnv } from './execute-tool.ts';
@@ -61,7 +61,7 @@ export async function runTurn(deps: AgentDeps, conv: Conversation, userText: str
     try {
       reply = await llm.chat({
         model: cfg.model,
-        messages: [{ role: 'system', content: systemPrompt(cfg) }, ...trim(conv.messages, cfg.contextChars)],
+        messages: [{ role: 'system', content: systemPrompt(cfg) }, ...trim(clipOld(conv.messages), cfg.contextChars)],
         tools: registry.specs(),
         signal,
         onText: hooks.onText,

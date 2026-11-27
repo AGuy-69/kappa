@@ -87,10 +87,6 @@ let conv = new Conversation(store, process.argv.includes('--resume') ? store.lat
 let midLine = false;
 const hooks = {
   onText(s: string) { process.stdout.write(s); midLine = !s.endsWith('\n'); },
-  onStatus(msg: string) {
-    if (midLine) { console.log(); midLine = false; }
-    console.log(dim(`… ${msg}`));
-  },
   onToolStart(name: string, args: string) {
     if (midLine) { console.log(); midLine = false; }
     console.log(dim(`⚙ ${name} ${args.length > 140 ? args.slice(0, 140) + '…' : args}`));

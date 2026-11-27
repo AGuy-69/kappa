@@ -1,2 +1,4 @@
 node_modules
 .env
+dock/bin
+dock/obj

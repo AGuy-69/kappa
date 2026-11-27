@@ -457,3 +457,13 @@ test('21. search_files stops at a limit and says so, instead of grinding through
   assert.match(r.note, /5000 files read.*Narrow the folder/);
   assert.equal(r.matches, 0);
 });
+test('older turns\' tool results are clipped when re-sent, but the current turn keeps them whole', async () => {
+  const t = setup();
+  fs.writeFileSync(path.join(t.work, 'big.txt'), 'x'.repeat(2000));
+  t.script(use(['read_file', { path: 'big.txt' }]), say('read it'), say('next'));
+  await t.run('read big.txt');
+  await t.run('and now?');
+  const toolMsg = (i: number) => t.llm.calls[i].messages.find((m) => m.role === 'tool')!.content!;
+  assert.ok(toolMsg(1).length > 2000, 'inside the same turn the model sees the full result');
+  assert.ok(toolMsg(2).endsWith('[older result clipped]') && toolMsg(2).length < 400, 'in the next turn only a stub is sent');
+});
