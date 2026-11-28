@@ -8,8 +8,10 @@ export interface Speaker {
    * Speaks `text` aloud. Markdown, code blocks and links are cleaned first (see cleanForSpeech).
    * Resolves when the speech has finished OR been stopped; rejects (KappaError) only if no engine could run.
    * Calling speak() while already speaking cuts the old speech off first.
+   * `onChunk`, when the engine knows it (ElevenLabs), is called as each piece of speech starts playing, with its words and how long it lasts,
+   * so a display can keep pace with the voice.
    */
-  speak(text: string, signal?: AbortSignal): Promise<void>;
+  speak(text: string, signal?: AbortSignal, onChunk?: (c: { text: string; seconds: number }) => void): Promise<void>;
   /** Cuts the current speech off immediately. Safe to call at any time. */
   stop(): void;
 }

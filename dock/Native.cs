@@ -17,6 +17,30 @@ static class Native
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr h, int id);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr h, ref MONITORINFO mi);
+    [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
+
+    /// <summary>The dock has no console of its own: this lets Console.WriteLine print into the terminal that started it (does nothing if started by double-click).</summary>
+    public static void AttachParentConsole()
+    {
+        if (AttachConsole(-1)) Console.SetOut(new System.IO.StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true });
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+
+    /// <summary>The usable area (screen minus taskbar) of the monitor nearest a point, in device pixels.</summary>
+    public static bool WorkAreaAt(int x, int y, out RECT work)
+    {
+        work = default;
+        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        var h = MonitorFromPoint(new POINT { X = x, Y = y }, 2); // 2 = nearest monitor
+        if (h == IntPtr.Zero || !GetMonitorInfo(h, ref mi)) return false;
+        work = mi.rcWork;
+        return true;
+    }
 
     static void Style(IntPtr h, int flag, bool on)
     {

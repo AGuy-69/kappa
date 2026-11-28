@@ -11,7 +11,8 @@ import type { Listener, Recording, Speaker } from '../voice/index.ts';
  *
  * dock -> Kappa  {t:'say',text} {t:'approve',id,ok} {t:'cancel'} {t:'new'} {t:'listen',on} {t:'voice',on}
  * Kappa -> dock  {t:'ready'} {t:'state',s:'idle'|'thinking'|'working'|'error',label} {t:'text',d}
- *                {t:'approval',id,tool,risk,target,detail?} {t:'done',status,text,error?} {t:'heard',text} {t:'voice',on,error?}
+ *                {t:'approval',id,tool,risk,target,detail?} {t:'done',status,text,error?} {t:'heard',text} {t:'voice',on,timed?,error?}
+ *                {t:'speech',text,seconds} (a piece of the reply starts playing; only when voice is timed) {t:'spoken'} (the reply has been said, or cut off)
  *
  * Approvals are answered only by {t:'approve'}; if the dock goes away or the turn is cancelled, every open one is denied.
  */
@@ -71,7 +72,9 @@ export function runBridge(o: BridgeOpts): Promise<void> {
     send({ t: 'done', status: r.status, text: r.text, ...(err ? { error: err } : {}) });
     state(err ? 'error' : 'idle', err);
     if (voiceOn && r.status === 'done' && r.text) { // not awaited: she may talk while you do something else
-      speaker!.speak(r.text).catch((e) => { voiceOn = false; send({ t: 'voice', on: false, error: errMsg(e) }); });
+      speaker!.speak(r.text, undefined, (c) => send({ t: 'speech', ...c }))
+        .catch((e) => { voiceOn = false; send({ t: 'voice', on: false, error: errMsg(e) }); })
+        .then(() => send({ t: 'spoken' }));
     }
   }
 
@@ -111,6 +114,7 @@ export function runBridge(o: BridgeOpts): Promise<void> {
       case 'approve': pending.get(m.id)?.(m.ok === true); break;
       case 'cancel':
         turn?.abort(); // a running request ends itself with status 'cancelled'
+        speaker?.stop(); // and she stops talking
         if (rec) { rec.cancel(); rec = null; turn = null; state('idle'); }
         break;
       case 'new': if (!turn) conv = o.newConv(); break;
@@ -119,7 +123,7 @@ export function runBridge(o: BridgeOpts): Promise<void> {
         try {
           if (m.on === true) { speaker ??= o.makeSpeaker(); voiceOn = true; } else { voiceOn = false; speaker?.stop(); }
         } catch (e) { voiceOn = false; send({ t: 'voice', on: false, error: errMsg(e) }); break; }
-        send({ t: 'voice', on: voiceOn });
+        send({ t: 'voice', on: voiceOn, ...(voiceOn && speaker?.name === 'elevenlabs' ? { timed: true } : {}) });
         break;
     }
   });

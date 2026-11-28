@@ -97,7 +97,7 @@ export class ElevenSpeaker implements Speaker {
     }
   }
 
-  async speak(text: string, signal?: AbortSignal): Promise<void> {
+  async speak(text: string, signal?: AbortSignal, onChunk?: (c: { text: string; seconds: number }) => void): Promise<void> {
     this.stop();
     const gen = this.gen;
     const chunks = splitSentences(cleanForSpeech(text, this.o.maxChars), 400);
@@ -119,6 +119,7 @@ export class ElevenSpeaker implements Speaker {
         if (i + 1 < chunks.length) next = fetchChunk(i + 1);
         const wav = path.join(dir, `${i}.wav`);
         fs.writeFileSync(wav, pcmToWav(pcm));
+        onChunk?.({ text: chunks[i], seconds: pcm.length / (RATE * 2) }); // 16-bit mono: 2 bytes a sample
         await this.play(wav);
         if (this.gen !== gen) return;
       }
